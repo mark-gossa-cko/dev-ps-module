@@ -5,13 +5,13 @@ function gco {
     git push --set-upstream origin (git rev-parse --abbrev-ref HEAD)
 }
 
-function CodeArtifactLogin {
+function cal {
     $domain="checkout.okta.com"
     $okta_app="0oar3nsvk7VtIvsL3357"
     $aws_okta_app="0oa423kknpZCS07GJ357"
     $role_name="cko_issuing_engineer"
     $account_id="791259062566"
-    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta
+    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta -s 43200
     
     Dotnet restore
 }
@@ -47,4 +47,4 @@ function Find-Code {
     Write-Output $results | Select-Object @{N="repository";E={$_.repository.namewithowner}}, path, @{N="code";E={$_.textMatches.fragment}}, url | Sort-Object repository
 }
 
-Export-ModuleMember -Function gco, CodeArtifactLogin, Find-Code
+Export-ModuleMember -Function gco, cal, Find-Code
