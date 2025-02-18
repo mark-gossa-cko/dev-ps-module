@@ -5,6 +5,17 @@ function gco {
     git push --set-upstream origin (git rev-parse --abbrev-ref HEAD)
 }
 
+function gpu {
+    git checkout main
+    git pull
+}
+
+function gnb {
+    param($Name)
+    gpu
+    git checkout -b $Name
+}
+
 function cal {
     $domain="checkout.okta.com"
     $okta_app="0oar3nsvk7VtIvsL3357"
@@ -24,11 +35,12 @@ function Find-Code {
         [Parameter(Mandatory = $false)]
         [String] $Repository = "",
         [Parameter(Mandatory = $false)]
-        [String] $Organization = "cko-issuing"
+        [String] $Organization = "cko-issuing",
+        [Parameter(Mandatory = $false)]
+        [String[]] $Languages = @("c#", "typescript", "java", "hcl")
     )
 
     $limit = 30
-    $languages = @("c#", "typescript", "java")
     $results = @()
 
     $searchRepository = ""
@@ -36,7 +48,7 @@ function Find-Code {
         $searchRepository = "$Organization/$Repository"
     }
 
-    foreach ($language in $languages){
+    foreach ($language in $Languages){
         $newResults = gh search code $Text --repo $searchRepository --language $language --owner $Organization --json path --json repository --json textMatches --json url --limit $limit | ConvertFrom-Json
         if ($newResults.Count -eq $limit) {Write-Warning "$limit item limit reached - refine search"}
         $results += $newResults
@@ -47,4 +59,8 @@ function Find-Code {
     Write-Output $results | Select-Object @{N="repository";E={$_.repository.namewithowner}}, path, @{N="code";E={$_.textMatches.fragment}}, url | Sort-Object repository
 }
 
-Export-ModuleMember -Function gco, cal, Find-Code
+function Update-Pwsh {
+    winget install --id Microsoft.Powershell --source winget
+}
+
+Export-ModuleMember -Function gco, cal, Find-Code, Update-Pwsh, gnb, gpu
