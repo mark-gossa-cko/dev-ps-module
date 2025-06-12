@@ -1,4 +1,4 @@
-function gco {
+function New-GitCommit {
     param($Message)
     git add .
     git commit -m $Message
@@ -17,6 +17,10 @@ function gnb {
 }
 
 function cal {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Path
+    )
     $domain="checkout.okta.com"
     $okta_app="0oar3nsvk7VtIvsL3357"
     $aws_okta_app="0oa423kknpZCS07GJ357"
@@ -24,7 +28,7 @@ function cal {
     $account_id="791259062566"
     okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta -s 43200
     
-    Dotnet restore
+    Dotnet restore $Path
 }
 
 function Find-Code {
@@ -63,4 +67,78 @@ function Update-Pwsh {
     winget install --id Microsoft.Powershell --source winget
 }
 
-Export-ModuleMember -Function gco, cal, Find-Code, Update-Pwsh, gnb, gpu
+function Hide-Taskbar {
+    Start-ScheduledTask -TaskName "Auto-hide taskbar"
+}
+
+function Open-Repo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Path
+    )
+    
+    $leaf = Split-Path -Leaf $Path
+    $userProfile = $env:USERPROFILE
+    $modulePath = Join-Path -Path $userProfile -ChildPath ".devPsModule"
+    if (-not (Test-Path $modulePath)) {
+        New-Item -Path $modulePath -ItemType Directory | Out-Null
+    }
+    $pidInfoPath = Join-Path -Path $modulePath -ChildPath "$leaf.json"
+    
+    $cursorPID = (Start-Process -FilePath "cursor" -ArgumentList $Path -PassThru).Id
+    $slnPIDs = @()
+    foreach ($slnFile in (Get-ChildItem -Path $Path -Filter "*.sln" -Recurse)) {
+        $slnPIDs += (Start-Process -FilePath $slnFile.FullName -PassThru).Id
+    }
+    
+    $pidInfo = @{
+        CursorPID = $cursorPID
+        SlnPIDs = $slnPIDs
+    }
+    
+    $pidInfo | ConvertTo-Json | Out-File -FilePath $pidInfoPath
+    
+    # cal $Path
+}
+
+function Close-Repo {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Path
+    )
+    
+    $userProfile = $env:USERPROFILE
+    $modulePath = Join-Path -Path $userProfile -ChildPath ".devPsModule"
+    $pidInfoPath = Join-Path -Path $modulePath -ChildPath "$Path.json"
+    
+    if (Test-Path $pidInfoPath) {
+        $pidInfo = Get-Content -Path $pidInfoPath | ConvertFrom-Json
+        if ($pidInfo.CursorPID) {
+            Stop-Process -Id $pidInfo.CursorPID -Force -ErrorAction SilentlyContinue
+        }
+        if ($pidInfo.SlnPIDs) {
+            foreach ($pid in $pidInfo.SlnPIDs) {
+                Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } else {
+        Write-Warning "No process information found for $Path."
+    }
+}
+
+function Get-OpenRepos {
+    $userProfile = $env:USERPROFILE
+    $modulePath = Join-Path -Path $userProfile -ChildPath ".devPsModule"
+    if (Test-Path $modulePath) {
+        Get-ChildItem -Path $modulePath -Filter "*.json" | ForEach-Object { $_.BaseName }
+    } else {
+        Write-Warning "No .devPsModule folder found."
+    }
+}
+
+Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos
+Set-Alias -Name gco -Value New-GitCommit
+Set-Alias -Name or -Value Open-Repo
+Set-Alias -Name cr -Value Close-Repo
+Set-Alias -Name gor -Value Get-OpenRepos
+Export-ModuleMember -Alias gco, or, cr, gor
