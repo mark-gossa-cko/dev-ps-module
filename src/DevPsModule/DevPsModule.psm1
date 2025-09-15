@@ -68,7 +68,11 @@ function Update-Pwsh {
 }
 
 function Hide-Taskbar {
-    Start-ScheduledTask -TaskName "Auto-hide taskbar"
+    $p='HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+    $v=(Get-ItemProperty -Path $p).Settings
+    $v[8]=123
+    Set-ItemProperty -Path $p -Name Settings -Value $v
+    Stop-Process -f -ProcessName explorer
 }
 
 function Open-Repo {
