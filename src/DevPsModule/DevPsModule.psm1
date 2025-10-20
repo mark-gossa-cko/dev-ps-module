@@ -26,8 +26,9 @@ function cal {
     $aws_okta_app="0oa423kknpZCS07GJ357"
     $role_name="cko_issuing_engineer"
     $account_id="791259062566"
-    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta -s 43200
     
+    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta -s 43200
+    aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --region eu-west-1
     Dotnet restore $Path
 }
 
