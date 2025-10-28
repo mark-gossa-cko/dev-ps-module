@@ -50,6 +50,8 @@ function gcl {
 
     Set-Location $repoName
 
+    cal
+
     Invoke-item *.sln
 }
 
