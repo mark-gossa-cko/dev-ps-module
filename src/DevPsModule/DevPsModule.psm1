@@ -37,6 +37,22 @@ function cal {
     Dotnet restore $Path
 }
 
+function gcl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $RepositoryUrl
+    )
+
+    # Extract folder name from repository URL
+    $repoName = ($RepositoryUrl -split "/" | Select-Object -Last 1) -replace ".git$",""
+
+    git clone $RepositoryUrl
+
+    Set-Location $repoName
+
+    Invoke-item *.sln
+}
+
 function Find-Code {
     [CmdletBinding()]
     param (
@@ -146,9 +162,9 @@ function Get-OpenRepos {
     }
 }
 
-Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos
+Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl
 Set-Alias -Name gco -Value New-GitCommit
 Set-Alias -Name or -Value Open-Repo
 Set-Alias -Name cr -Value Close-Repo
 Set-Alias -Name gor -Value Get-OpenRepos
-Export-ModuleMember -Alias gco, or, cr, gor
+Export-ModuleMember -Alias gco, or, cr, gor, gcl
