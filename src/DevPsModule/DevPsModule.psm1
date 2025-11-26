@@ -164,9 +164,14 @@ function Get-OpenRepos {
     }
 }
 
-Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl
+function Start-Music {
+    Start-Process -FilePath "chrome" -ArgumentList "--incognito", "https://music.youtube.com"
+}
+
+Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music
 Set-Alias -Name gco -Value New-GitCommit
 Set-Alias -Name or -Value Open-Repo
 Set-Alias -Name cr -Value Close-Repo
 Set-Alias -Name gor -Value Get-OpenRepos
-Export-ModuleMember -Alias gco, or, cr, gor, gcl
+Set-Alias -Name music -Value Start-Music
+Export-ModuleMember -Alias gco, or, cr, gor, gcl, music
