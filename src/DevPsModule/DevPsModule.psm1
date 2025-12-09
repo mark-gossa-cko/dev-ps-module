@@ -166,6 +166,7 @@ function Get-OpenRepos {
 
 function Start-Music {
     Start-Process -FilePath "chrome" -ArgumentList "--incognito", "https://music.youtube.com"
+    Start-Process -FilePath "ms-actioncenter:controlcenter/bluetooth"
 }
 
 Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music
