@@ -169,7 +169,19 @@ function Start-Music {
     Start-Process -FilePath "ms-actioncenter:controlcenter/bluetooth"
 }
 
-Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music
+function Start-Claude {
+    $credentialsPath = "C:\Users\MarkGossa\.aws\credentials"
+    if (-not (Test-Path $credentialsPath) -or (Get-Item $credentialsPath).LastWriteTime -lt (Get-Date).AddHours(-1)) {
+        okta-aws-cli --org-domain "checkout.okta.com" --oidc-client-id "0oar3nsvk7VtIvsL3357" --aws-acct-fed-app-id 0oaricq7oliS1Yb8G357 -bz --aws-session-duration 43200 --all-profiles
+    }
+
+    $env:AWS_PROFILE = "playground14-OktaIDP-cko_playground_engineer"
+    $env:CLAUDE_CODE_USE_BEDROCK = "1"
+    $env:AWS_REGION = "eu-west-1"
+    claude --model global.anthropic.claude-opus-4-5-20251101-v1:0
+}
+
+Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music, Start-Claude
 Set-Alias -Name gco -Value New-GitCommit
 Set-Alias -Name or -Value Open-Repo
 Set-Alias -Name cr -Value Close-Repo
