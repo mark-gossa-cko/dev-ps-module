@@ -24,8 +24,8 @@ function cal {
     $domain="checkout.okta.com"
     $okta_app="0oar3nsvk7VtIvsL3357"
     $aws_okta_app="0oa423kknpZCS07GJ357"
-    $role_name="cko_issuing_engineer"
-    $account_id="791259062566"
+    $role_name="cko_marketplace_engineer"
+    $account_id="711533748762" # Must be the account ID of the role you want to assume, not necessarily the account you want to work in - depends on how your Okta app is configured
     
 
     if (!$Path) {
