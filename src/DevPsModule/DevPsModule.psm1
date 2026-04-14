@@ -24,16 +24,15 @@ function cal {
     $domain="checkout.okta.com"
     $okta_app="0oar3nsvk7VtIvsL3357"
     $aws_okta_app="0oa423kknpZCS07GJ357"
-    $role_name="cko_marketplace_engineer"
-    $account_id="711533748762" # Must be the account ID of the role you want to assume, not necessarily the account you want to work in - depends on how your Okta app is configured
+    $role_name="cko_prism_engineer"
+    $cko_mgmt_account="791259062566" # Must be the account ID of the role you want to assume and this must match the account ID in the provider ARN
     
-
     if (!$Path) {
         $Path = Get-Location
     }
         
-    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($account_id):role/$role_name -i arn:aws:iam::$($account_id):saml-provider/okta -s 43200
-    aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --region eu-west-1
+    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($cko_mgmt_account):role/$role_name -i arn:aws:iam::$($cko_mgmt_account):saml-provider/okta -s 43200
+    aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --domain-owner 791259062566 --region eu-west-1
     Dotnet restore $Path
 }
 

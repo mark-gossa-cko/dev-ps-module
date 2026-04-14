@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Atlassian__searchAtlassian",
+      "mcp__claude_ai_Atlassian__fetchAtlassian",
+      "Bash(git clone:*)"
+    ]
+  }
+}
