@@ -178,7 +178,7 @@ function Start-Claude {
     # $env:CLAUDE_CODE_USE_BEDROCK = "1"
     # $env:AWS_REGION = "eu-west-1"
     $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
-    claude
+    C:\Users\MarkGossa\.local\bin\claude.exe
 }
 
 Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music, Start-Claude
