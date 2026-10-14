@@ -181,7 +181,32 @@ function Start-Claude {
     C:\Users\MarkGossa\.local\bin\claude.exe
 }
 
-Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music, Start-Claude
+function Start-FocusSession {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateRange(1, 240)]
+        [int] $Minutes,
+        [Parameter(Mandatory = $false)]
+        [String] $SlackToken = $env:SLACK_USER_TOKEN # User token (xoxp-) with the dnd:write scope
+    )
+
+    if (!$SlackToken) {
+        Write-Warning "No Slack token found - set SLACK_USER_TOKEN or pass -SlackToken. Skipping Slack DND."
+    } else {
+        $response = Invoke-RestMethod -Method Post -Uri "https://slack.com/api/dnd.setSnooze" -Headers @{ Authorization = "Bearer $SlackToken" } -Body @{ num_minutes = $Minutes }
+        if ($response.ok) {
+            Write-Host "Slack DND on until $([DateTimeOffset]::FromUnixTimeSeconds($response.snooze_endtime).LocalDateTime.ToShortTimeString())"
+        } else {
+            Write-Warning "Failed to set Slack DND: $($response.error)"
+        }
+    }
+
+    # Undocumented Clock app deep link used by the Windows focus widget. The public FocusSessionManager API is a Limited Access Feature so can't be called from a script.
+    $endTime = [DateTimeOffset]::UtcNow.AddMinutes($Minutes).ToUnixTimeMilliseconds()
+    Start-Process "ms-clock://createfocustimer?skipBreaks=true&isAot=true&force=true&endTime=$endTime&duration=$Minutes"
+}
+
+Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music, Start-Claude, Start-FocusSession
 Set-Alias -Name gco -Value New-GitCommit
 Set-Alias -Name or -Value Open-Repo
 Set-Alias -Name cr -Value Close-Repo
