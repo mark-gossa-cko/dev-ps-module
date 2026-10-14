@@ -204,6 +204,126 @@ function Start-FocusSession {
     # Undocumented Clock app deep link used by the Windows focus widget. The public FocusSessionManager API is a Limited Access Feature so can't be called from a script.
     $endTime = [DateTimeOffset]::UtcNow.AddMinutes($Minutes).ToUnixTimeMilliseconds()
     Start-Process "ms-clock://createfocustimer?skipBreaks=true&isAot=true&force=true&endTime=$endTime&duration=$Minutes"
+    Move-FocusTimerToLaptopScreen
+}
+
+function Move-FocusTimerToLaptopScreen {
+    if (-not ('DevPsModule.FocusTimerWindow' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+namespace DevPsModule {
+    public static class FocusTimerWindow {
+        [StructLayout(LayoutKind.Sequential)] struct LUID { public uint LowPart; public int HighPart; }
+        [StructLayout(LayoutKind.Sequential)] struct PATH_SOURCE_INFO { public LUID adapterId; public uint id; public uint modeInfoIdx; public uint statusFlags; }
+        [StructLayout(LayoutKind.Sequential)] struct PATH_TARGET_INFO { public LUID adapterId; public uint id; public uint modeInfoIdx; public uint outputTechnology; public uint rotation; public uint scaling; public uint refreshNumerator; public uint refreshDenominator; public uint scanLineOrdering; public int targetAvailable; public uint statusFlags; }
+        [StructLayout(LayoutKind.Sequential)] struct PATH_INFO { public PATH_SOURCE_INFO sourceInfo; public PATH_TARGET_INFO targetInfo; public uint flags; }
+        [StructLayout(LayoutKind.Explicit, Size = 64)] struct MODE_INFO {
+            [FieldOffset(0)] public uint infoType;
+            [FieldOffset(16)] public uint width;
+            [FieldOffset(20)] public uint height;
+            [FieldOffset(28)] public int x;
+            [FieldOffset(32)] public int y;
+        }
+        [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
+        [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+
+        [DllImport("user32.dll")] static extern int GetDisplayConfigBufferSizes(uint flags, out uint numPaths, out uint numModes);
+        [DllImport("user32.dll")] static extern int QueryDisplayConfig(uint flags, ref uint numPaths, [Out] PATH_INFO[] paths, ref uint numModes, [Out] MODE_INFO[] modes, IntPtr topologyId);
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT point, uint flags);
+        [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+        [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string windowName);
+        [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hWnd, int index);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hWnd, int attribute, out int value, int size);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+        [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+        const uint QDC_ONLY_ACTIVE_PATHS = 0x2;
+        const int GWL_EXSTYLE = -20, WS_EX_TOPMOST = 0x8, DWMWA_CLOAKED = 14, MDT_EFFECTIVE_DPI = 0;
+        const uint SWP_NOSIZE = 0x1, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
+        static readonly IntPtr DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
+        // Built-in laptop screen, or IntPtr.Zero if it isn't active (e.g. lid closed)
+        static IntPtr GetInternalMonitor() {
+            uint numPaths, numModes;
+            if (GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, out numPaths, out numModes) != 0) return IntPtr.Zero;
+            var paths = new PATH_INFO[numPaths];
+            var modes = new MODE_INFO[numModes];
+            if (QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ref numPaths, paths, ref numModes, modes, IntPtr.Zero) != 0) return IntPtr.Zero;
+
+            for (int i = 0; i < numPaths; i++) {
+                // INTERNAL, LVDS, DISPLAYPORT_EMBEDDED, UDI_EMBEDDED
+                uint technology = paths[i].targetInfo.outputTechnology;
+                if (technology != 0x80000000 && technology != 6 && technology != 11 && technology != 13) continue;
+                var source = modes[paths[i].sourceInfo.modeInfoIdx];
+                return MonitorFromPoint(new POINT { x = source.x + (int)source.width / 2, y = source.y + (int)source.height / 2 }, 0);
+            }
+            return IntPtr.Zero;
+        }
+
+        // The Clock app's always-on-top focus timer, or IntPtr.Zero if it isn't showing.
+        // Uses FindWindowEx as the timer sits in a z-order band that EnumWindows skips.
+        static IntPtr FindTimer() {
+            IntPtr hWnd = IntPtr.Zero;
+            while ((hWnd = FindWindowEx(IntPtr.Zero, hWnd, "ApplicationFrameWindow", "Clock")) != IntPtr.Zero) {
+                int cloaked;
+                DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out cloaked, sizeof(int));
+                if ((GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0 && IsWindowVisible(hWnd) && cloaked == 0) return hWnd;
+            }
+            return IntPtr.Zero;
+        }
+
+        // Waits for the focus timer to appear then moves it to the top right of the laptop screen.
+        // Returns false if the timer didn't appear or couldn't be moved.
+        public static bool MoveToInternalDisplay(int timeoutMs) {
+            var previousContext = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            try {
+                var monitor = GetInternalMonitor();
+                var info = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+                if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return true;
+                var work = info.rcWork;
+
+                // The timer moves and resizes as it's created, so wait until it's settled
+                IntPtr timer = IntPtr.Zero, previousTimer = IntPtr.Zero;
+                RECT window = new RECT(), previousWindow = new RECT();
+                for (int waited = 0; ; waited += 250) {
+                    if (waited >= timeoutMs) return false;
+                    Thread.Sleep(250);
+                    timer = FindTimer();
+                    if (timer == IntPtr.Zero) continue;
+                    GetWindowRect(timer, out window);
+                    if (timer == previousTimer && window.Equals(previousWindow)) break;
+                    previousTimer = timer;
+                    previousWindow = window;
+                }
+
+                if (window.Left >= work.Left && window.Top >= work.Top && window.Right <= work.Right && window.Bottom <= work.Bottom) return true;
+
+                // The timer resizes itself for the laptop screen's scaling once it's moved, so line it up using the size it'll end up
+                uint dpi, unused;
+                GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, out dpi, out unused);
+                int width = (int)((window.Right - window.Left) * (double)dpi / GetDpiForWindow(timer));
+                int margin = (int)(24 * dpi / 96);
+                return SetWindowPos(timer, IntPtr.Zero, work.Right - width - margin, work.Top + margin, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            } finally {
+                SetThreadDpiAwarenessContext(previousContext);
+            }
+        }
+    }
+}
+'@
+    }
+
+    if (-not [DevPsModule.FocusTimerWindow]::MoveToInternalDisplay(10000)) {
+        Write-Warning "Couldn't move the focus timer to the laptop screen"
+    }
 }
 
 Export-ModuleMember -Function New-GitCommit, cal, Find-Code, Update-Pwsh, gnb, gpu, Hide-Taskbar, Open-Repo, Close-Repo, Get-OpenRepos, gcl, Start-Music, music, Start-Claude, Start-FocusSession

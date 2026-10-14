@@ -29,7 +29,7 @@ Finds code within your organization. Parameters:
 
 ## Start-FocusSession
 
-Sets Slack to Do Not Disturb and starts a Windows focus session for the given number of minutes. Parameters:
+Sets Slack to Do Not Disturb and starts a Windows focus session for the given number of minutes. The always-on-top focus timer is moved to the top right of the laptop screen if it opens on an external monitor. Parameters:
 
 | Parameter | Mandatory | Description |
 | --- | --- | --- |
