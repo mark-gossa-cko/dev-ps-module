@@ -16,6 +16,63 @@ function gnb {
     git checkout -b $Name
 }
 
+function Get-CodeArtifactTokenExpiry {
+    param(
+        [String] $Token
+    )
+
+    # The token's first segment is base64url-encoded JSON, which usually includes the expiry as "exp"
+    try {
+        $header = $Token.Split('.')[0].Replace('-', '+').Replace('_', '/')
+        $header = $header.PadRight($header.Length + (4 - $header.Length % 4) % 4, '=')
+        $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($header)) | ConvertFrom-Json
+        if ($claims.exp) {
+            return [DateTimeOffset]::FromUnixTimeSeconds($claims.exp)
+        }
+    }
+    catch {
+    }
+    return $null
+}
+
+function Get-NuGetSourcePassword {
+    param(
+        [String] $ConfigFile,
+        [String] $SourceName
+    )
+
+    if (!(Test-Path $ConfigFile)) {
+        return $null
+    }
+
+    # Credentials are stored under the source name, XML-encoded (e.g. "/" becomes "_x002F_")
+    [xml] $config = Get-Content $ConfigFile -Raw
+    $credentials = $config.SelectSingleNode("/configuration/packageSourceCredentials/$([Xml.XmlConvert]::EncodeLocalName($SourceName))")
+    if (!$credentials) {
+        return $null
+    }
+
+    $clearTextPassword = $credentials.SelectSingleNode("add[@key='ClearTextPassword']")
+    if ($clearTextPassword) {
+        return $clearTextPassword.value
+    }
+
+    # On Windows, NuGet encrypts passwords with DPAPI for the current user, using "NuGet" as the entropy
+    $password = $credentials.SelectSingleNode("add[@key='Password']")
+    if (!$password) {
+        return $null
+    }
+    try {
+        Add-Type -AssemblyName System.Security.Cryptography.ProtectedData
+        $bytes = [Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($password.value), [Text.Encoding]::UTF8.GetBytes("NuGet"), [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        return [Text.Encoding]::UTF8.GetString($bytes)
+    }
+    catch {
+        Write-Warning "Couldn't decrypt the saved password for $SourceName"
+        return $null
+    }
+}
+
 function cal {
     param(
         [Parameter(Mandatory = $false)]
@@ -26,43 +83,66 @@ function cal {
 
     $role_name="cko_prism_engineer"
     $cko_mgmt_account="791259062566" # Must be the account ID of the role you want to assume and this must match the account ID in the provider ARN
-    
+    $nuget_source="cko-packages/cko-packages"
+    $nuget_config="$env:APPDATA\NuGet\NuGet.Config" # User-level config, so the token works for every repo
+    $warning_hours=9
+
     if (!$Path) {
         $Path = Get-Location
     }
-    
-    # No longer works - fails with "The application's assurance requirements are not met by the 'subject_token'"
-    # $domain="checkout.okta.com"
-    # $okta_app="0oar3nsvk7VtIvsL3357" # Okta's CLI app
-    # $aws_okta_app="0oa423kknpZCS07GJ357" # AWS Account Federation app
-    # okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($cko_mgmt_account):role/$role_name -i arn:aws:iam::$($cko_mgmt_account):saml-provider/okta -s 43200
-    # aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --domain-owner 791259062566 --region eu-west-1 --no-verify-ssl
+
+    # Reuse the token already saved for the NuGet source if it hasn't expired
+    $useSavedToken = $false
+    if (!$Token) {
+        $savedToken = Get-NuGetSourcePassword -ConfigFile $nuget_config -SourceName $nuget_source
+        if ($savedToken) {
+            $savedExpiry = Get-CodeArtifactTokenExpiry -Token $savedToken
+            if (!$savedExpiry) {
+                Write-Warning "Couldn't read the saved token's expiry date - you'll need a new token"
+            }
+            elseif ($savedExpiry -le [DateTimeOffset]::Now) {
+                Write-Warning "The saved token expired at $($savedExpiry.LocalDateTime) - you'll need a new token"
+            }
+            else {
+                $Token = $savedToken
+                $useSavedToken = $true
+            }
+        }
+    }
 
     if (!$Token) {
         Write-Host "To get a CodeArtifact token:"
         Write-Host "  1. Log into the AWS Console via Okta => Gen 2 (account: cko-mgmt $cko_mgmt_account, role: $role_name)"
         Write-Host "  2. Open CloudShell and run:"
         Write-Host "     aws codeartifact get-authorization-token --domain cko-packages --domain-owner $cko_mgmt_account --region eu-west-1 --duration-seconds 43200 --query authorizationToken --output text"
-        Write-Host "  3. Run: cal -Token <token>"
-        return
-    }
-
-    dotnet nuget update source "cko-packages/cko-packages" --username aws --password $Token
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to update NuGet source with the provided token. Please check the token and try again."
-        return
-    }
-
-    try {
-        $header = $Token.Split('.')[0].Replace('-', '+').Replace('_', '/')
-        $header = $header.PadRight($header.Length + (4 - $header.Length % 4) % 4, '=')
-        $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($header)) | ConvertFrom-Json
-        if (!$claims.exp) {
-            throw "No exp field"
+        Write-Host "  3. Paste the token below"
+        $Token = (Read-Host -Prompt "Token" -MaskInput).Trim()
+        if (!$Token) {
+            Write-Warning "No token entered - skipping restore"
+            return
         }
-        Write-Host "Token expires: $([DateTimeOffset]::FromUnixTimeSeconds($claims.exp).LocalDateTime)" -ForegroundColor Green
     }
-    catch {
+
+    if (!$useSavedToken) {
+        dotnet nuget update source $nuget_source --username aws --password $Token --configfile $nuget_config
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to update NuGet source with the provided token. Please check the token and try again."
+            return
+        }
+    }
+
+    $expiry = Get-CodeArtifactTokenExpiry -Token $Token
+    if ($expiry) {
+        $remaining = $expiry - [DateTimeOffset]::Now
+        $message = "Token expires in $([Math]::Floor($remaining.TotalHours))h $($remaining.Minutes)m (at $($expiry.LocalDateTime))"
+        if ($remaining.TotalHours -lt $warning_hours) {
+            Write-Warning "$message - run cal -Token <token> with a new token soon"
+        }
+        else {
+            Write-Host $message -ForegroundColor Green
+        }
+    }
+    else {
         Write-Warning "Couldn't read the token's expiry date"
     }
 
