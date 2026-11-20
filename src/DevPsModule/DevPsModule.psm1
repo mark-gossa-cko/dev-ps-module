@@ -85,7 +85,7 @@ function cal {
     $cko_mgmt_account="791259062566" # Must be the account ID of the role you want to assume and this must match the account ID in the provider ARN
     $nuget_source="cko-packages/cko-packages"
     $nuget_config="$env:APPDATA\NuGet\NuGet.Config" # User-level config, so the token works for every repo
-    $warning_hours=9
+    $warning_time=[DateTimeOffset][DateTime]::Today.AddHours(18) # Warn if the token won't last until 6pm today
 
     if (!$Path) {
         $Path = Get-Location
@@ -135,8 +135,9 @@ function cal {
     if ($expiry) {
         $remaining = $expiry - [DateTimeOffset]::Now
         $message = "Token expires in $([Math]::Floor($remaining.TotalHours))h $($remaining.Minutes)m (at $($expiry.LocalDateTime))"
-        if ($remaining.TotalHours -lt $warning_hours) {
-            Write-Warning "$message - run cal -Token <token> with a new token soon"
+        if ($expiry -lt $warning_time) {
+            Write-Host $message -ForegroundColor Green
+            Write-Warning "Token expires before 6pm today. Get a new token from CloudShell and run cal -Token <token>"
         }
         else {
             Write-Host $message -ForegroundColor Green
