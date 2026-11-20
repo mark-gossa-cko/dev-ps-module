@@ -139,9 +139,6 @@ function cal {
             Write-Host $message -ForegroundColor Green
             Write-Warning "Token expires before 6pm today. Get a new token from CloudShell and run cal -Token <token>"
         }
-        else {
-            Write-Host $message -ForegroundColor Green
-        }
     }
     else {
         Write-Warning "Couldn't read the token's expiry date"
