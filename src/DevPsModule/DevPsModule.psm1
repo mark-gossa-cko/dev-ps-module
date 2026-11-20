@@ -19,21 +19,54 @@ function gnb {
 function cal {
     param(
         [Parameter(Mandatory = $false)]
-        [String] $Path
+        [String] $Path,
+        [Parameter(Mandatory = $false)]
+        [String] $Token # CodeArtifact token from CloudShell
     )
-    $domain="checkout.okta.com"
-    $okta_app="0oar3nsvk7VtIvsL3357"
-    $aws_okta_app="0oa423kknpZCS07GJ357"
+
     $role_name="cko_prism_engineer"
     $cko_mgmt_account="791259062566" # Must be the account ID of the role you want to assume and this must match the account ID in the provider ARN
     
     if (!$Path) {
         $Path = Get-Location
     }
-        
-    okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($cko_mgmt_account):role/$role_name -i arn:aws:iam::$($cko_mgmt_account):saml-provider/okta -s 43200
-    aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --domain-owner 791259062566 --region eu-west-1 --no-verify-ssl
-    Dotnet restore $Path
+    
+    # No longer works - fails with "The application's assurance requirements are not met by the 'subject_token'"
+    # $domain="checkout.okta.com"
+    # $okta_app="0oar3nsvk7VtIvsL3357" # Okta's CLI app
+    # $aws_okta_app="0oa423kknpZCS07GJ357" # AWS Account Federation app
+    # okta-aws-cli --org-domain $domain --oidc-client-id $okta_app --aws-acct-fed-app-id $aws_okta_app -b -z -r arn:aws:iam::$($cko_mgmt_account):role/$role_name -i arn:aws:iam::$($cko_mgmt_account):saml-provider/okta -s 43200
+    # aws codeartifact login --tool dotnet --repository cko-packages --domain cko-packages --domain-owner 791259062566 --region eu-west-1 --no-verify-ssl
+
+    if (!$Token) {
+        Write-Host "To get a CodeArtifact token:"
+        Write-Host "  1. Log into the AWS Console via Okta => Gen 2 (account: cko-mgmt $cko_mgmt_account, role: $role_name)"
+        Write-Host "  2. Open CloudShell and run:"
+        Write-Host "     aws codeartifact get-authorization-token --domain cko-packages --domain-owner $cko_mgmt_account --region eu-west-1 --duration-seconds 43200 --query authorizationToken --output text"
+        Write-Host "  3. Run: cal -Token <token>"
+        return
+    }
+
+    dotnet nuget update source "cko-packages/cko-packages" --username aws --password $Token
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to update NuGet source with the provided token. Please check the token and try again."
+        return
+    }
+
+    try {
+        $header = $Token.Split('.')[0].Replace('-', '+').Replace('_', '/')
+        $header = $header.PadRight($header.Length + (4 - $header.Length % 4) % 4, '=')
+        $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($header)) | ConvertFrom-Json
+        if (!$claims.exp) {
+            throw "No exp field"
+        }
+        Write-Host "Token expires: $([DateTimeOffset]::FromUnixTimeSeconds($claims.exp).LocalDateTime)" -ForegroundColor Green
+    }
+    catch {
+        Write-Warning "Couldn't read the token's expiry date"
+    }
+
+    dotnet restore $Path
 }
 
 function gcl {
